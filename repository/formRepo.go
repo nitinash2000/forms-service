@@ -48,6 +48,7 @@ func (r *formRepo) Update(formId string, form *models.Form) error {
 	if err != nil {
 		return fmt.Errorf("could not update form: %w", err)
 	}
+
 	return nil
 }
 
@@ -96,10 +97,13 @@ func (r *formRepo) GetFormSubmission(formId, userId string) (*models.FormSubmiss
 
 	err := r.formSubmissionCollection.FindOne(context.Background(), filter).Decode(&formSubmission)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return nil, fmt.Errorf("form submission with id %s not found", formId)
+		// if err == mongo.ErrNoDocuments {
+		// 	return nil, fmt.Errorf("form submission with id %s not found", formId)
+		// }
+
+		if err != mongo.ErrNoDocuments {
+			return nil, fmt.Errorf("could not retrieve form: %w", err)
 		}
-		return nil, fmt.Errorf("could not retrieve form: %w", err)
 	}
 	return &formSubmission, nil
 }

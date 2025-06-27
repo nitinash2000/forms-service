@@ -1,0 +1,72 @@
+{
+  "_id": {
+    "$oid": "685d1f40d613e8b18e8458d7"
+  },
+  "form_id": "123",
+  "form_name": "Customer Onboarding",
+  "form_pages": [
+    {
+      "page": 1,
+      "fields": [
+        {
+          "field_id": "f1",
+          "field_name": "Mobile No",
+          "field_type": "text",
+          "field_value": ""
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "fields": [
+        {
+          "field_id": "f2",
+          "field_name": "DOB",
+          "field_type": "text",
+          "field_value": ""
+        }
+      ]
+    },
+    {
+      "page": 3,
+      "fields": [
+        {
+          "field_id": "f3",
+          "field_name": "Name",
+          "field_type": "text",
+          "field_value": ""
+        }
+      ]
+    },
+    {
+      "page": 4,
+      "fields": [
+        {
+          "field_id": "f4",
+          "field_name": "Address",
+          "field_type": "text",
+          "field_value": ""
+        }
+      ]
+    },
+    {
+      "page": 5,
+      "fields": [
+        {
+          "field_id": "f5",
+          "field_name": "PAN",
+          "field_type": "text",
+          "field_value": ""
+        }
+      ]
+    }
+  ],
+  "created_at": {
+    "$date": "2025-06-26T10:21:52.590Z"
+  },
+  "updated_at": {
+    "$date": {
+      "$numberLong": "-62135596800000"
+    }
+  }
+}

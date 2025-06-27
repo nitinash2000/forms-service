@@ -28,11 +28,12 @@ type Field struct {
 }
 
 type FormSubmission struct {
-	ID              primitive.ObjectID `bson:"_id,omitempty"`
-	FormId          string             `bson:"form_id"`
-	UserId          string             `bson:"user_id"`
-	Status          string             `bson:"status"`
-	CurrentPage     int                `bson:"current_page"`
-	SubmittedAt     time.Time          `bson:"submitted_at,omitempty"`
-	CompletedFields []Field            `bson:"completed_fields"`
+	ID                 primitive.ObjectID `bson:"_id,omitempty"`
+	FormId             string             `bson:"form_id"`
+	UserId             string             `bson:"user_id"`
+	Status             string             `bson:"status"`
+	LastFieldCompleted string             `bson:"last_field_completed"`
+	CurrentPage        int                `bson:"current_page"`
+	SubmittedAt        time.Time          `bson:"submitted_at,omitempty"`
+	CompletedFields    []Field            `bson:"completed_fields"`
 }

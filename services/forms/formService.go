@@ -10,10 +10,10 @@ import (
 type FormService interface {
 	CreateForm(req *dtos.Form) error
 	UpdateForm(id string, req *dtos.Form) error
-	GetForm(formId string) (*dtos.Form, error)
+	GetForm(formId string, page int) (*dtos.Form, error)
 	DeleteForm(formId string) error
 
-	GetFormDetails(formId, userId string) (*dtos.FormDetails, error)
+	GetFormDetails(formId, userId string, page int) (*dtos.FormDetails, error)
 	UpsertFormDetails(req *dtos.FormDetails) error
 }
 
@@ -100,7 +100,7 @@ func (f *formService) UpdateForm(id string, req *dtos.Form) error {
 	return nil
 }
 
-func (f *formService) GetForm(formId string) (*dtos.Form, error) {
+func (f *formService) GetForm(formId string, page int) (*dtos.Form, error) {
 	formModel, err := f.formRepo.Get(formId)
 	if err != nil {
 		return nil, err
@@ -109,24 +109,28 @@ func (f *formService) GetForm(formId string) (*dtos.Form, error) {
 	var formPages []dtos.FormPage
 	for _, v := range formModel.FormPages {
 		var fields []dtos.Field
-		for _, field := range v.Fields {
-			fields = append(fields, dtos.Field{
-				FieldId:   field.FieldId,
-				FieldName: field.FieldName,
-				FieldType: field.FieldType,
+
+		if page == 0 || v.Page == page {
+			for _, field := range v.Fields {
+				fields = append(fields, dtos.Field{
+					FieldId:   field.FieldId,
+					FieldName: field.FieldName,
+					FieldType: field.FieldType,
+				})
+			}
+
+			formPages = append(formPages, dtos.FormPage{
+				Page:   v.Page,
+				Fields: fields,
 			})
 		}
-
-		formPages = append(formPages, dtos.FormPage{
-			Page:   v.Page,
-			Fields: fields,
-		})
 	}
 
 	result := &dtos.Form{
 		FormId:    formModel.FormId,
 		FormName:  formModel.FormName,
 		FormPages: formPages,
+		NoOfPages: len(formModel.FormPages),
 		CreatedAt: formModel.CreatedAt,
 		UpdatedAt: formModel.UpdatedAt,
 	}
@@ -143,19 +147,40 @@ func (f *formService) DeleteForm(formId string) error {
 	return nil
 }
 
-func (f *formService) getCurrentPage(formPages []models.FormPage, completedFieldsMap map[string]struct{}) int {
+func (f *formService) getCurrentPageFields(formPages []models.FormPage, completedFieldsMap map[string]dtos.Field, page int) (int, string, []dtos.Field) {
+	var completedFields []dtos.Field
+
+	isSpecificPage := false
+	if page != 0 {
+		isSpecificPage = true
+	}
+
 	for _, formPage := range formPages {
+		completedFields = nil
+
+		if isSpecificPage && page != formPage.Page {
+			continue
+		}
+
 		for _, field := range formPage.Fields {
-			if _, exists := completedFieldsMap[field.FieldId]; !exists {
-				return formPage.Page
+			completedField, exists := completedFieldsMap[field.FieldId]
+
+			if !exists {
+				return formPage.Page, field.FieldId, completedFields
 			}
+
+			completedFields = append(completedFields, completedField)
+		}
+
+		if isSpecificPage {
+			return page, "", completedFields
 		}
 	}
 
-	return formPages[len(formPages)-1].Page
+	return formPages[len(formPages)-1].Page, "", completedFields
 }
 
-func (f *formService) GetFormDetails(formId, userId string) (*dtos.FormDetails, error) {
+func (f *formService) GetFormDetails(formId, userId string, page int) (*dtos.FormDetails, error) {
 	form, err := f.formRepo.Get(formId)
 	if err != nil {
 		return nil, err
@@ -166,33 +191,28 @@ func (f *formService) GetFormDetails(formId, userId string) (*dtos.FormDetails, 
 		return nil, err
 	}
 
-	var fields []dtos.Field
-	for _, v := range formSubmission.CompletedFields {
-		fields = append(fields, dtos.Field{
-			FieldId:    v.FieldId,
-			FieldName:  v.FieldName,
-			FieldType:  v.FieldType,
-			FieldValue: v.FieldValue,
-		})
-	}
-
-	result := &dtos.FormDetails{
-		FormId:      formId,
-		UserId:      userId,
-		Status:      formSubmission.Status,
-		CurrentPage: 1,
-		SubmittedAt: formSubmission.SubmittedAt,
-		Fields:      fields,
-	}
-
-	completedFieldsMap := make(map[string]struct{})
+	completedFieldsMap := make(map[string]dtos.Field)
 	for _, field := range formSubmission.CompletedFields {
 		if field.FieldValue != "" {
-			completedFieldsMap[field.FieldId] = struct{}{}
+			completedFieldsMap[field.FieldId] = dtos.Field{
+				FieldId:    field.FieldId,
+				FieldName:  field.FieldName,
+				FieldType:  field.FieldType,
+				FieldValue: field.FieldValue,
+			}
 		}
 	}
 
-	result.CurrentPage = f.getCurrentPage(form.FormPages, completedFieldsMap)
+	result := &dtos.FormDetails{
+		FormId:             formId,
+		UserId:             userId,
+		Status:             formSubmission.Status,
+		CurrentPage:        1,
+		LastFieldCompleted: formSubmission.LastFieldCompleted,
+		SubmittedAt:        formSubmission.SubmittedAt,
+	}
+
+	result.CurrentPage, result.NextField, result.CompletedFields = f.getCurrentPageFields(form.FormPages, completedFieldsMap, page)
 
 	return result, nil
 }
@@ -200,7 +220,16 @@ func (f *formService) GetFormDetails(formId, userId string) (*dtos.FormDetails, 
 func (f *formService) UpsertFormDetails(req *dtos.FormDetails) error {
 	var completedFields []models.Field
 
-	for _, field := range req.Fields {
+	previousFormSubmission, err := f.formRepo.GetFormSubmission(req.FormId, req.UserId)
+	if err != nil {
+		return err
+	}
+
+	completedFieldsMap := make(map[string]struct{})
+
+	for _, field := range req.CompletedFields {
+		completedFieldsMap[field.FieldId] = struct{}{}
+
 		completedFields = append(completedFields, models.Field{
 			FieldId:    field.FieldId,
 			FieldName:  field.FieldName,
@@ -209,16 +238,25 @@ func (f *formService) UpsertFormDetails(req *dtos.FormDetails) error {
 		})
 	}
 
-	formSubmissionModel := &models.FormSubmission{
-		FormId:          req.FormId,
-		UserId:          req.UserId,
-		Status:          req.Status,
-		CurrentPage:     req.CurrentPage,
-		SubmittedAt:     time.Now(),
-		CompletedFields: completedFields,
+	if previousFormSubmission != nil {
+		for _, v := range previousFormSubmission.CompletedFields {
+			if _, extsts := completedFieldsMap[v.FieldId]; !extsts {
+				completedFields = append(completedFields, v)
+			}
+		}
 	}
 
-	err := f.formRepo.UpsertFormSubmission(formSubmissionModel)
+	formSubmissionModel := &models.FormSubmission{
+		FormId:             req.FormId,
+		UserId:             req.UserId,
+		Status:             req.Status,
+		CurrentPage:        req.CurrentPage,
+		LastFieldCompleted: req.LastFieldCompleted,
+		SubmittedAt:        time.Now(),
+		CompletedFields:    completedFields,
+	}
+
+	err = f.formRepo.UpsertFormSubmission(formSubmissionModel)
 	if err != nil {
 		return err
 	}
