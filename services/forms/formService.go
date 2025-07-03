@@ -151,30 +151,28 @@ func (f *formService) DeleteForm(formId string) error {
 func (f *formService) getCurrentPageFields(formPages []models.FormPage, completedFieldsMap map[string]dtos.Field, page int) (int, string, []dtos.Field) {
 	var completedFields []dtos.Field
 
-	isSpecificPage := false
-	if page != 0 {
-		isSpecificPage = true
-	}
+	isCurrentPage := false
+	nextField := ""
 
 	for _, formPage := range formPages {
 		completedFields = nil
 
-		if isSpecificPage && page != formPage.Page {
-			continue
+		if page == formPage.Page {
+			isCurrentPage = true
 		}
 
 		for _, field := range formPage.Fields {
 			completedField, exists := completedFieldsMap[field.FieldId]
-
-			if !exists {
-				return formPage.Page, field.FieldId, completedFields
+			if exists {
+				completedFields = append(completedFields, completedField)
+			} else if nextField == "" {
+				nextField = field.FieldName
+				isCurrentPage = true
 			}
-
-			completedFields = append(completedFields, completedField)
 		}
 
-		if isSpecificPage {
-			return page, "", completedFields
+		if isCurrentPage {
+			return formPage.Page, nextField, completedFields
 		}
 	}
 
@@ -223,20 +221,20 @@ func (f *formService) getLastPageFields(form *models.Form, prevFormSubmission *m
 		prevFieldsMap[v.FieldId] = struct{}{}
 	}
 
-	pageFlag := false
+	isCurrentPage := false
 
 	for _, v := range form.FormPages {
 		allowedFieldsMap := make(map[string]struct{})
 
 		for _, field := range v.Fields {
 			if _, exists := prevFieldsMap[field.FieldId]; !exists {
-				pageFlag = true
+				isCurrentPage = true
 			}
 
 			allowedFieldsMap[field.FieldId] = struct{}{}
 		}
 
-		if pageFlag {
+		if isCurrentPage {
 			return allowedFieldsMap
 		}
 	}
