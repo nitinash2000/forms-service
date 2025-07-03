@@ -1,6 +1,7 @@
 package forms
 
 import (
+	"fmt"
 	"forms-service/dtos"
 	"forms-service/models"
 	"forms-service/repository"
@@ -204,17 +205,43 @@ func (f *formService) GetFormDetails(formId, userId string, page int) (*dtos.For
 	}
 
 	result := &dtos.FormDetails{
-		FormId:             formId,
-		UserId:             userId,
-		Status:             formSubmission.Status,
-		CurrentPage:        1,
-		LastFieldCompleted: formSubmission.LastFieldCompleted,
-		SubmittedAt:        formSubmission.SubmittedAt,
+		FormId:      formId,
+		UserId:      userId,
+		Status:      formSubmission.Status,
+		CurrentPage: 1,
+		SubmittedAt: formSubmission.SubmittedAt,
 	}
 
 	result.CurrentPage, result.NextField, result.CompletedFields = f.getCurrentPageFields(form.FormPages, completedFieldsMap, page)
 
 	return result, nil
+}
+
+func (f *formService) getLastPageFields(form *models.Form, prevFormSubmission *models.FormSubmission) map[string]struct{} {
+	prevFieldsMap := make(map[string]struct{})
+	for _, v := range prevFormSubmission.CompletedFields {
+		prevFieldsMap[v.FieldId] = struct{}{}
+	}
+
+	pageFlag := false
+
+	for _, v := range form.FormPages {
+		allowedFieldsMap := make(map[string]struct{})
+
+		for _, field := range v.Fields {
+			if _, exists := prevFieldsMap[field.FieldId]; !exists {
+				pageFlag = true
+			}
+
+			allowedFieldsMap[field.FieldId] = struct{}{}
+		}
+
+		if pageFlag {
+			return allowedFieldsMap
+		}
+	}
+
+	return nil
 }
 
 func (f *formService) UpsertFormDetails(req *dtos.FormDetails) error {
@@ -225,9 +252,19 @@ func (f *formService) UpsertFormDetails(req *dtos.FormDetails) error {
 		return err
 	}
 
-	completedFieldsMap := make(map[string]struct{})
+	form, err := f.formRepo.Get(req.FormId)
+	if err != nil {
+		return err
+	}
 
+	allowedFieldsMap := f.getLastPageFields(form, previousFormSubmission)
+
+	completedFieldsMap := make(map[string]struct{})
 	for _, field := range req.CompletedFields {
+		if _, exists := allowedFieldsMap[field.FieldId]; !exists {
+			return fmt.Errorf("field %s not accepted", field.FieldId)
+		}
+
 		completedFieldsMap[field.FieldId] = struct{}{}
 
 		completedFields = append(completedFields, models.Field{
@@ -238,22 +275,19 @@ func (f *formService) UpsertFormDetails(req *dtos.FormDetails) error {
 		})
 	}
 
-	if previousFormSubmission != nil {
-		for _, v := range previousFormSubmission.CompletedFields {
-			if _, extsts := completedFieldsMap[v.FieldId]; !extsts {
-				completedFields = append(completedFields, v)
-			}
+	for _, v := range previousFormSubmission.CompletedFields {
+		if _, exists := completedFieldsMap[v.FieldId]; !exists {
+			completedFields = append(completedFields, v)
 		}
 	}
 
 	formSubmissionModel := &models.FormSubmission{
-		FormId:             req.FormId,
-		UserId:             req.UserId,
-		Status:             req.Status,
-		CurrentPage:        req.CurrentPage,
-		LastFieldCompleted: req.LastFieldCompleted,
-		SubmittedAt:        time.Now(),
-		CompletedFields:    completedFields,
+		FormId:          req.FormId,
+		UserId:          req.UserId,
+		Status:          req.Status,
+		CurrentPage:     req.CurrentPage,
+		SubmittedAt:     time.Now(),
+		CompletedFields: completedFields,
 	}
 
 	err = f.formRepo.UpsertFormSubmission(formSubmissionModel)
